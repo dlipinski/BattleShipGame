@@ -1,0 +1,12 @@
+GtkWindow {
+    background-color: magenta;
+}
+
+GtkButton {
+    background-image: none;
+}
+
+
+#myButton_red{
+    background-color: red;
+}
