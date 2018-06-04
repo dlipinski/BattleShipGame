@@ -1,4 +1,9 @@
-!bin/bash
+#!/bin/sh
 
-gcc client.c -o client `pkg-config --cflags --libs gtk+-2.0`
+#compile
+gcc -o client client.c -L /usr/X11R6/lib -lX11 -lm
+
+
+#run
+./client &
 ./client

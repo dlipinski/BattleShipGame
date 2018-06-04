@@ -1,428 +1,483 @@
-#include <gtk/gtk.h>  
+/*
+    Name: Client.c
+    Author: Dawid Lipiński
+    Created: 28.05.18
+*/
+
+
+#include <X11/Xlib.h>
+#include <X11/Xutil.h>
+#include <X11/Xos.h>
+#include <X11/Xatom.h>
+#include <X11/cursorfont.h>	/* pre-defined crusor shapes */
+
+#include <stdlib.h>
 #include <string.h>
-#include "my_library.h"
+#include <stdio.h>
 
-int player1_fields[10][10];
-int player2_fields[10][10];
-int count=0;
-int shipNum=0;
-void zero_player_1_fields(){
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            player1_fields[i][j]=0;
-            player2_fields[i][j]=0;
+/* Buttons structure */
+typedef struct{
+    int x1; /* left top corner point */
+    int x2; /* right top corner point */
+    int y1; /* left bottom corner point */
+    int y2; /* right bottom corner point*/
+    int clicked; /* 0 - not currently clicked, 1 - currently clicked*/
+    int ship; /* 0 -no ship, 1 - ship, 2 - shooted ship, 3 - mishit */
+} MyField;
+/* Players fields */
+MyField opponent_fields[10][10];
+MyField my_fields[10][10];
+
+/* Game structure */
+typedef struct{
+    int state; /* 0 - choosing ships positions, 1 - waiting for 2nd player, 3-my turn, 4-his tour, 5-end */
+    int ships_placed /* */;
+} Game;
+/* Communicats */
+const char *communicats[] ={
+    "one" /* 0 */,
+    "two" /* 1 */
+};
+/*  Global variables  */
+
+Display *     display;
+int           screen_num;
+static char * appname;
+
+
+/*  main() function  */
+
+int main( int argc, char * argv[] ) {
+
+    /* Define buttons */
+    for(int i=0;i<10;i++){
+        for(int j=0;j<10;j++){
+            my_fields[i][j].clicked = 0;
+            my_fields[i][j].ship = 0;
+            opponent_fields[i][j].clicked = 0;
         }
     }
-}
+    /* Declare and define game */
+    Game game;
+    game.state=0;
+    game.ships_placed = 0;
+    /*  Window variables  */
 
-void button_player2_clicked(GtkWidget *button, gpointer data) {
-    //Declare colors
-    GdkColor color_red;
-    GdkColor color_yellow;
-    GdkColor color_blue;
-    GdkColor color_grey;
-    //"Define" colors
-    gdk_color_parse ("red", &color_red);
-    gdk_color_parse ("yellow", &color_yellow);
-    gdk_color_parse ("blue", &color_blue);
-    gdk_color_parse ("grey", &color_grey);
-
-    //Get button index in format x,y from button name
-    const gchar *button_text = gtk_widget_get_name (button);
-    //Define and declare temp variable
-    char text[100] = "";
-    //Copy button_text value to text to avoid warnings
-    strcpy(text,button_text);
-    //Define temp 2D variable to storage indexes as strings
-    char** tokens;
-    //Declare tokens as splited text (2 strings including indexes as strings)
-    tokens = str_split(text, ',');
-    //Define and declare x
-    int x = atoi(tokens[0]);
-    //Define and declare y
-    int y = atoi(tokens[1]);
-    //If field is not clicked yet, write 's' inside it, and update player fields array
-    if(player2_fields[x][y]==0){
-        gtk_widget_modify_bg (GTK_WIDGET(data), GTK_STATE_NORMAL, &color_yellow);
-        player2_fields[x][y]=1;
-    }
-    //If it is, make it like not-clicked
-    else{
-        gtk_widget_modify_bg (GTK_WIDGET(data), GTK_STATE_NORMAL, NULL);
-        player2_fields[x][y]=0;
-    } 
-}
+    Window       win;
+    int          x, y;
+    unsigned int width, height;
+    unsigned int border_width;
+    char *       window_name = "BattleShip!";
+    char *       icon_name   = "HelloX";
 
 
-void button_player1_clicked(GtkWidget *button, gpointer data) {
-    //Declare colors
-    GdkColor color_red;
-    GdkColor color_yellow;
-    GdkColor color_blue;
-    GdkColor color_grey;
-    //"Define" colors
-    gdk_color_parse ("red", &color_red);
-    gdk_color_parse ("yellow", &color_yellow);
-    gdk_color_parse ("blue", &color_blue);
-    gdk_color_parse ("grey", &color_grey);
+    /*  Display variables  */
 
-    //Get button index in format x,y from button name
-    const gchar *button_text = gtk_widget_get_name (button);
-    //Define and declare temp variable
-    char text[100] = "";
-    //Copy button_text value to text to avoid warnings
-    strcpy(text,button_text);
-    //Define temp 2D variable to storage indexes as strings
-    char** tokens;
-    //Declare tokens as splited text (2 strings including indexes as strings)
-    tokens = str_split(text, ',');
-    //Define and declare x
-    int x = atoi(tokens[0]);
-    //Define and declare y
-    int y = atoi(tokens[1]);
-    //If field is not clicked yet, write 's' inside it, and update player fields array
-    if(player1_fields[x][y]==0){
-        gtk_widget_modify_bg (GTK_WIDGET(data), GTK_STATE_NORMAL, &color_grey);
-        count++;
-        player1_fields[x][y]=1;
-    }
-    //If it is, make it like not-clicked
-    else{
-        gtk_widget_modify_bg (GTK_WIDGET(data), GTK_STATE_NORMAL, NULL);
-        count--;
-        player1_fields[x][y]=0;
-    } 
-}
-static gboolean checkShips(){
-
-    return TRUE;
-}
-static gboolean writeToTextView(GtkTextBuffer *bufor, char * text){
-    char text_to_write[500]  = "";
-    strcat(text_to_write,text);
-    //Define iter
-    GtkTextIter iter;
-    GtkTextMark *mark;
-    mark = gtk_text_buffer_get_insert (bufor);
-    gtk_text_buffer_get_iter_at_mark (bufor, &iter, mark);
-    gtk_text_buffer_insert_with_tags_by_name (bufor, &iter, text_to_write, -1, "italic", NULL);
-}
-
-//5+4+4+3+3+2+2 =
-static gboolean key_event(GtkWidget *widget, GdkEventKey *event, GtkTextBuffer *bufor)
-{
+    char *       display_name = NULL;
+    unsigned int display_width, display_height;
     
-    char text[100]="";
-    strcat(text,gdk_keyval_name (event->keyval));
-    if(strcmp(text,"s") == 0){
-        if(count<23){
-            switch(shipNum)
-            {
-                case 0:
-                    if(count==5){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size 5 ship!\nNow, size 4 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 5 ship.");
-                    }
-                    break;
-                case 1:
-                    if(count==9){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size 4 ship!\nNow, size 4 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 4 ship.");
-                    }
-                    break;
-                case 2:
-                    if(count==13){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size 4 ship!\nNow, size 3 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 4 ship.");
-                    }
-                    break;
-                case 3:
-                    if(count==16){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size 3 ship!\nNow, size 3 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 3 ship.");
-                    }
-                    break;
-                case 4:
-                    if(count==19){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size3 ship!\nNow, size 2 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 3 ship.");
-                    }
-                    break;
-                case 5:
-                    if(count==21){
-                        shipNum++;
-                        writeToTextView(bufor,"\nGreat, you placed size 2 ship!\nNow, size 2 ship...");
-                    }else{
-                        writeToTextView(bufor,"\nPlace size 2 ship.");
-                    }
-                    break;
-                case 6:
-                    if(count==23){
-                        shipNum++;
-                        
-                    }else{
-                        writeToTextView(bufor,"\nShips placed. Well done!");
-                    }
-                    break;
-                default:
-                    break;
+
+    /*  Miscellaneous X variables  */
+
+    XSizeHints *  size_hints;
+    XWMHints   *  wm_hints;
+    XClassHint *  class_hints;
+    XTextProperty windowName, iconName;
+    XEvent        report;
+    XFontStruct * font_info;
+    XGCValues     values;
+    GC            gc;
+    
+    appname = argv[0];
+
+
+    /*  Allocate memory for our structures  */
+
+    if ( !( size_hints  = XAllocSizeHints() ) || 
+	 !( wm_hints    = XAllocWMHints()   ) ||
+	 !( class_hints = XAllocClassHint() )    ) {
+	fprintf(stderr, "%s: couldn't allocate memory.\n", appname);
+	exit(EXIT_FAILURE);
+    }
+
+
+    /*  Connect to X server  */
+
+    if ( (display = XOpenDisplay(display_name)) == NULL ) {
+	fprintf(stderr, "%s: couldn't connect to X server %s\n",
+		appname, display_name);
+	exit(EXIT_FAILURE);
+    }
+
+
+    /*  Get screen size from display structure macro  */
+
+    screen_num     = DefaultScreen(display);
+    display_width  = DisplayWidth(display, screen_num);
+    display_height = DisplayHeight(display, screen_num);
+
+
+    /*  Set initial window size and position, and create it  */
+
+    x = y = 0;
+    width  = 330;
+    height = 650;
+
+    win = XCreateSimpleWindow(display, RootWindow(display, screen_num),
+			      x, y, width, height, border_width,
+			      BlackPixel(display, screen_num),
+			      WhitePixel(display, screen_num));
+
+
+    /*  Set hints for window manager before mapping window  */
+
+    if ( XStringListToTextProperty(&window_name, 1, &windowName) == 0 ) {
+	fprintf(stderr, "%s: structure allocation for windowName failed.\n",
+		appname);
+	exit(EXIT_FAILURE);
+    }
+
+    if ( XStringListToTextProperty(&icon_name, 1, &iconName) == 0 ) {
+	fprintf(stderr, "%s: structure allocation for iconName failed.\n",
+		appname);
+	exit(EXIT_FAILURE);
+    }
+
+    size_hints->flags       = PPosition | PSize | PMinSize;
+    size_hints->min_width   = 200;
+    size_hints->min_height  = 100;
+
+    wm_hints->flags         = StateHint | InputHint;
+    wm_hints->initial_state = NormalState;
+    wm_hints->input         = True;
+
+    class_hints->res_name   = appname;
+    class_hints->res_class  = "hellox";
+
+    XSetWMProperties(display, win, &windowName, &iconName, argv, argc,
+		     size_hints, wm_hints, class_hints);
+
+
+    /*  Choose which events we want to handle  */
+
+    XSelectInput(display, win, ExposureMask | KeyPressMask |
+		 ButtonPressMask | StructureNotifyMask);
+
+
+    /*  Load a font called "9x15"  */
+
+    if ( (font_info = XLoadQueryFont(display, "9x15")) == NULL ) {
+	fprintf(stderr, "%s: cannot open 9x15 font.\n", appname);
+	exit(EXIT_FAILURE);
+    }
+
+
+    /*  Create graphics context  */
+
+    gc = XCreateGC(display, win, 0, &values);
+
+    XSetFont(display, gc, font_info->fid);
+    XSetForeground(display, gc, BlackPixel(display, screen_num));
+
+
+    /*  Display Window  */
+
+    XMapWindow(display, win);
+
+    
+    /* Set colors */
+    Status rc;			/* return status of various Xlib functions.  */
+    Colormap screen_colormap;  
+    XColor red, brown, blue, yellow, green,black;
+    screen_colormap = DefaultColormap(display, DefaultScreen(display));
+    /* allocate a new GC (graphics context) for drawing in the window. */
+    XSync(display, False);
+
+    /* get access to the screen's color map. */
+    screen_colormap = DefaultColormap(display, DefaultScreen(display));
+
+    /* allocate the set of colors we will want to use for the drawing. */
+    rc = XAllocNamedColor(display, screen_colormap, "red", &red, &red);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'red' color.\n");
+        exit(1);
+    }
+    rc = XAllocNamedColor(display, screen_colormap, "brown", &brown, &brown);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'brown' color.\n");
+        exit(1);
+    }
+    rc = XAllocNamedColor(display, screen_colormap, "blue", &blue, &blue);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'blue' color.\n");
+        exit(1);
+    }
+    rc = XAllocNamedColor(display, screen_colormap, "yellow", &yellow, &yellow);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'yellow' color.\n");
+        exit(1);
+    }
+    rc = XAllocNamedColor(display, screen_colormap, "green", &green, &green);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'green' color.\n");
+        exit(1);
+    }
+    rc = XAllocNamedColor(display, screen_colormap, "black", &black, &black);
+    if (rc == 0) {
+        fprintf(stderr, "XAllocNamedColor - failed to allocated 'black' color.\n");
+        exit(1);
+    }
+    XSetForeground(display, gc, black.pixel);
+
+    /* Set rectangle and text variables */
+    int rectangle_size = 30;
+    int spacing = 10;
+    int rec_x,rec_y;
+    /* Cursor stuff */
+    Window root_return,child_return;
+    int root_x_return, root_y_return;
+    int cursor_x, cursor_y;
+    unsigned int mask_return;
+    /*  Enter event loop  */
+
+    while ( 1 ) {
+	static char * message = "Hello, X Window System!";
+	static int    length;
+	static int    font_height;
+	static int    msg_x, msg_y;
+    static int    rectangle_size = 30;
+    static int    spacing = 10;
+    static int    rec_x,rec_y;
+    static char   pos_string[20];
+    static char   i_string[20],j_string[20];
+	XNextEvent(display, &report);
+
+	switch ( report.type ) {
+
+	case Expose:
+
+	    if ( report.xexpose.count != 0 )
+		    break;
+        XDrawString(display,win,gc,100,330,"Welcome to game!",strlen("Welcome to game!"));
+        /* Set opponent rectangles */
+        for ( int i=0; i< 10; i++){
+            for (int j=0; j<10; j++){
+                opponent_fields[i][j].x1 = i * rectangle_size + spacing;
+                opponent_fields[i][j].x2 = i * rectangle_size + rectangle_size;
+                opponent_fields[i][j].y1 = j*rectangle_size+ spacing;
+                opponent_fields[i][j].y2 = j*rectangle_size+ spacing + rectangle_size;
             }
-            return FALSE;
         }
-        else{
-            //tutaj wyslij sygnal
-            writeToTextView(bufor,"\nGreat, you placed size 2 ship!\nShips placed. Well done!");
-            g_print("l\n");
-            return TRUE;
+        /* Set player rectangles */
+        for ( int i=0; i< 10; i++){
+            for (int j=0; j<10; j++){
+                rec_x = i*rectangle_size+spacing;
+                rec_y =j*rectangle_size+ spacing + spacing*rectangle_size + rectangle_size;
+                my_fields[i][j].x1 = i * rectangle_size + spacing;
+                my_fields[i][j].x2 = i * rectangle_size + rectangle_size;
+                my_fields[i][j].y1 = j*rectangle_size+ spacing + spacing*rectangle_size + rectangle_size;
+                my_fields[i][j].y2 = j*rectangle_size+ spacing + spacing*rectangle_size + rectangle_size + rectangle_size;
+            }
         }
-    }
-    else{
+	    break;
+
+
+	case ConfigureNotify:
+
+	    /*  Store new window width & height  */
+
+	    width  = report.xconfigure.width;
+	    height = report.xconfigure.height;
+
+	    break;
+
+    case KeyPress:
+        break;
+    case ButtonPress:
+        XQueryPointer(display,win,&root_return,&child_return,&root_x_return,&root_y_return,&cursor_x,&cursor_y,&mask_return);
+        for(int i=0; i<10; i++){
+            for( int j=0; j<10; j++){
+                if(cursor_x > my_fields[i][j].x1 && cursor_x < my_fields[i][j].x2 && cursor_y > my_fields[i][j].y1 && cursor_y < my_fields[i][j].y2 && my_fields[i][j].ship!=1){
+                    if(my_fields[i][j].clicked == 1)
+                        my_fields[i][j].clicked = 0;
+                    else
+                        my_fields[i][j].clicked = 1;
+                    break;
+                }
+                if(cursor_x > opponent_fields[i][j].x1 && cursor_x < opponent_fields[i][j].x2 && cursor_y > opponent_fields[i][j].y1 && cursor_y < opponent_fields[i][j].y2 && game.state==3){
+                    if(opponent_fields[i][j].clicked == 1)
+                        opponent_fields[i][j].clicked = 0;
+                    else
+                        opponent_fields[i][j].clicked = 1;
+                    break;
+                }
+            }
+        }
+        XClearWindow(display,win);
+        int clicked_amount = 0;
         
+        
+        switch (game.state){
+            case 0: /* Setting up ships */
+                for(int i=0;i<10;i++) /* count clicked fields */
+                    for(int j=0;j<10;j++)
+                        if(my_fields[i][j].clicked==1)
+                            clicked_amount++;
+                int i1,j1,i2,j2;
+                if( clicked_amount == 2){/* selected 2 points for new ship */
+                    for(int i=0;i<10;i++) /* find 1st point of ship */
+                        for(int j=0;j<10;j++)
+                            if(my_fields[i][j].clicked==1){
+                                i1 = i;j1 = j;
+                            }
+                    for(int i=0;i<10;i++) /* find 2nd point of ship */
+                        for(int j=0;j<10;j++)
+                            if(my_fields[i][j].clicked==1 && (i!= i1 || j!=j1)){
+                                i2 = i;j2 = j;
+                            }
+                    switch (game.ships_placed){ /* depends on how many ships we arleady placed */
+                        case 0: /* 1st, 5-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+4) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-4) { for(int j = j1;j<=j2;j++) { my_fields[i2][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+4) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-4) { for(int i = i1;i<=i2;i++) { my_fields[i][j2].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 1: /* 2nd, 4-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+3) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-3) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+3) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-3) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 2: /* 2nd, 4-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+3) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-3) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+3) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-3) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 3: /* 3rd, 3-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+2) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-2) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+2) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-2) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 4: /* 4th, 3-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+2) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-2) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+2) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-2) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 5: /* 5th, 2-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+1) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-1) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++; break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+1) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-1) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++; break;} /* case from top to bottom */
+                            }
+                            break;
+                        case 6: /* 6th, 2-fields ship */
+                            if( i1 == i2 || j1 == j2 ){ /* check if points are in 1 line */
+                                if(i1 == i2 && j1 == j2+1) { for(int j = j2;j<=j1;j++) { my_fields[i1][j].ship=1;} game.ships_placed++;  break;} /* case from left to right */
+                                if(i1 == i2 && j1 == j2-1) { for(int j = j1;j<=j2;j++) { my_fields[i1][j].ship=1;} game.ships_placed++;  break;} /* case from right to left */
+                                if(j1 == j2 && i1 == i2+1) { for(int i = i2;i<=i1;i++) { my_fields[i][j1].ship=1;} game.ships_placed++;  break;} /* case from bottom to top */
+                                if(j1 == j2 && i1 == i2-1) { for(int i = i1;i<=i2;i++) { my_fields[i][j1].ship=1;} game.ships_placed++;  break;} /* case from top to bottom */
+                            }
+                            
+                            break;
+                        default:
+                            break;
+                    }
+                    for(int i=0;i<10;i++) /* unclick all fields */
+                        for(int j=0;j<10;j++)
+                            my_fields[i][j].clicked = 0;
+                        
+                }
+                XSetForeground(display, gc, black.pixel);
+                switch (game.ships_placed){
+                    case 0:
+                        XDrawString(display,win,gc,10,330,"Choose points of 1st ship (size 5)",strlen("Choose points of 1st ship (size 5)"));
+                        break;
+                    case 1:
+                        XDrawString(display,win,gc,10,330,"Choose points of 2nd ship (size 4)",strlen("Choose points of 2nd ship (size 4)"));
+                        break;
+                    case 2:
+                        XDrawString(display,win,gc,10,330,"Choose points of 3rd ship (size 4)",strlen("Choose points of 3rd ship (size 4)"));
+                        break;
+                    case 3:
+                        XDrawString(display,win,gc,10,330,"Choose points of 4th ship (size 3)",strlen("Choose points of 4th ship (size 3)"));
+                        break;
+                    case 4:
+                        XDrawString(display,win,gc,10,330,"Choose points of 5th ship (size 3)",strlen("Choose points of 5th ship (size 3)"));
+                        break;
+                    case 5:
+                        XDrawString(display,win,gc,10,330,"Choose points of 6th ship (size 2)",strlen("Choose points of 6th ship (size 2)"));
+                        break;
+                    case 6:
+                        XDrawString(display,win,gc,10,330,"Choose points of 7th ship (size 2)",strlen("Choose points of 7th ship (size 2)"));
+                        break;
+                    case 7:
+                        game.state=1;
+                        XDrawString(display,win,gc,10,330,"Waiting for second player...",strlen("Waiting for second player..."));
+                        break;
+                    default:
+                        break;
+                }
+                break;
+            
+            case 1:
+                XSetForeground(display, gc, black.pixel);
+                XDrawString(display,win,gc,10,330,"Waiting for second player...",strlen("Waiting for second player..."));
+                break;
+            default:
+                break;
+        }
+        
+        /* Print oppontnt rectangles */
+        for ( int i=0; i< 10; i++){
+            for (int j=0; j<10; j++){
+                rec_x = opponent_fields[i][j].x1;
+                rec_y = opponent_fields[i][j].y1;
+                XSetForeground(display, gc, green.pixel);
+                XDrawRectangle(display, win, gc, i*rectangle_size+spacing, rec_y, rectangle_size, rectangle_size);
+                if(opponent_fields[i][j].clicked == 1 && game.state > 0){
+                    XFillRectangle(display,win,gc,opponent_fields[i][j].x1,opponent_fields[i][j].y1,rectangle_size,rectangle_size);
+                }
+            }
+        }
+        /* Print player rectangles */
+        for ( int i=0; i< 10; i++){
+            for (int j=0; j<10; j++){
+                rec_x = my_fields[i][j].x1;
+                rec_y = my_fields[i][j].y1;
+                XSetForeground(display, gc, blue.pixel);
+                XDrawRectangle(display, win, gc, i*rectangle_size+spacing, rec_y, rectangle_size, rectangle_size);
+                if(my_fields[i][j].clicked == 1 && my_fields[i][j].ship != 1  && game.state == 0){
+                    XSetForeground(display, gc, yellow.pixel);
+                    XFillRectangle(display,win,gc,my_fields[i][j].x1,my_fields[i][j].y1,rectangle_size,rectangle_size);
+                }
+                if(my_fields[i][j].clicked != 1 && my_fields[i][j].ship == 1){
+                    XSetForeground(display, gc, blue.pixel);
+                    XFillRectangle(display,win,gc,my_fields[i][j].x1,my_fields[i][j].y1,rectangle_size,rectangle_size);
+                }
+            }
+        }
+	    //XUnloadFont(display, font_info->fid);
+	    //XFreeGC(display, gc);
+	    //XCloseDisplay(display);
+	    //exit(EXIT_SUCCESS);
+
+	}
     }
-    return FALSE;
+
+    return EXIT_SUCCESS;   /*  We shouldn't get here  */
 }
 
-int main( int  argc,char *argv[] )  
-{  
-    //Clear player 1 fields
-    zero_player_1_fields();
-
-    //Init gtk
-    gtk_init (&argc, &argv);  
-
-    //Declare colors
-    GdkColor color_red;
-    GdkColor color_yellow;
-    GdkColor color_blue;
-    GdkColor color_grey;
-    //"Define" colors
-    gdk_color_parse ("red", &color_red);
-    gdk_color_parse ("yellow", &color_yellow);
-    gdk_color_parse ("blue", &color_blue);
-    gdk_color_parse ("grey", &color_grey);
-
-
-    //Define window
-    GtkWidget *window;  
-    //Declare window
-    window = gtk_window_new (GTK_WINDOW_TOPLEVEL); 
-    //Set no-resize to window
-    gtk_window_set_resizable(GTK_WINDOW(window), FALSE);
-    //Set window size 800x800
-    gtk_widget_set_size_request (GTK_WIDGET(window), 800, 800); 
-    //Center window on deskop
-    gtk_window_set_position(GTK_WINDOW(window), GTK_WIN_POS_CENTER);
-    //Set window title
-    gtk_window_set_title (GTK_WINDOW(window), "Battleship Game");
-    //Set end process after close window
-    g_signal_connect(G_OBJECT(window), "destroy", G_CALLBACK(gtk_main_quit), NULL);
-    //Enable GDK_KEY_PRESS_MASK to catch key pressing (s-start)
-    gtk_widget_add_events(window, GDK_KEY_PRESS_MASK);
-
-    //Define main container (includes all elements) 
-    GtkWidget *container_main;
-    //Declare main container as vbox (all elements one under another)
-    container_main = gtk_hbox_new(FALSE, 1);
-    //Put main container to window
-    gtk_container_add(GTK_CONTAINER(window), container_main);
-        
-
-    
-    //Define tables container (includes all elements) 
-    GtkWidget *container_tables;
-    //Declare tables container as vbox (all elements one under another)
-    container_tables = gtk_vbox_new(FALSE, 1);
-    //Set tables container size
-    gtk_widget_set_size_request(GTK_WIDGET(container_tables), 150, 700);
-    //Set table container spacing
-    gtk_box_set_spacing (GTK_BOX(container_tables), 10);
-    //Set container border
-    gtk_container_set_border_width (GTK_CONTAINER(container_tables), 10);
-    //Put main container to window
-    gtk_container_add(GTK_CONTAINER(container_main), container_tables);
-
-    //Define frames
-    GtkWidget *frame_player_1; 
-    GtkWidget *frame_player_2; 
-    //Declare frames
-    frame_player_1 = gtk_frame_new (NULL);
-    frame_player_2 = gtk_frame_new (NULL);
-    //Set frames labels
-    gtk_frame_set_label( GTK_FRAME(frame_player_1), "  You  " );
-    gtk_frame_set_label( GTK_FRAME(frame_player_2), "  Opponent  " );
-    //Align the label at the right of the frame
-    gtk_frame_set_label_align( GTK_FRAME(frame_player_1), 0.1, 0.5);
-    gtk_frame_set_label_align( GTK_FRAME(frame_player_2), 0.1, 0.5);
-    /* Set the style of the frame */
-    gtk_frame_set_shadow_type( GTK_FRAME(frame_player_1), GTK_SHADOW_ETCHED_OUT);
-    gtk_frame_set_shadow_type( GTK_FRAME(frame_player_2), GTK_SHADOW_ETCHED_OUT);
-    //Put frames in tables containers (in reverse order, because we want player2 [opponent] table on top)
-    gtk_box_pack_start(GTK_BOX(container_tables), frame_player_2, TRUE, TRUE, 1);
-    gtk_box_pack_start(GTK_BOX(container_tables), frame_player_1, TRUE, TRUE, 1);
-
-    //Define players tables
-    GtkWidget *table_player1;
-    GtkWidget *table_player2;
-    //Declare players tables
-    table_player1 = gtk_table_new(10, 10, TRUE);
-    table_player2 = gtk_table_new(10, 10, TRUE);
-    //Set players tables borders width
-    gtk_container_set_border_width (GTK_CONTAINER(table_player1), 10);
-    gtk_container_set_border_width (GTK_CONTAINER(table_player2), 10);
-    //Set players tables background
-    gtk_widget_modify_bg (GTK_WIDGET(table_player1),GTK_STATE_NORMAL, &color_red);
-    gtk_widget_modify_bg (GTK_WIDGET(table_player2),GTK_STATE_NORMAL, &color_red);
-    //Set players tables row spacings
-    gtk_table_set_row_spacings(GTK_TABLE(table_player1), 1);
-    gtk_table_set_row_spacings(GTK_TABLE(table_player2), 1);
-    //Set players tables col spacings
-    gtk_table_set_col_spacings(GTK_TABLE(table_player1), 2);
-    gtk_table_set_col_spacings(GTK_TABLE(table_player2), 2);
-    //Put tables to frames (in reverse order, because we want player2 [opponent] table on top)
-    gtk_container_add(GTK_CONTAINER(frame_player_2), table_player2);
-    gtk_container_add(GTK_CONTAINER(frame_player_1), table_player1);
-
-    //Define players tables fields event boxes (so we can color buttons) 
-    GtkWidget *event_box_1[10][10];
-    GtkWidget *event_box_2[10][10];
-    //Declare players tables fields event boxes
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            event_box_1[i][j] = gtk_event_box_new();
-            event_box_2[i][j] = gtk_event_box_new();
-        }
-    }
-    //Define players tables fields (buttons)
-    GtkWidget *buttons_player1[10][10];
-    GtkWidget *buttons_player2[10][10];
-    //Declare player tables fields (buttons)
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            char row[5];sprintf(row, "%d", i);
-            char col[5];sprintf(col, "%d", j);
-            strcat(col, ",");strcat(col, row);
-            buttons_player1[i][j] = gtk_button_new();
-            gtk_container_add (GTK_CONTAINER(buttons_player1[i][j]), event_box_1[i][j]);
-            buttons_player2[i][j] = gtk_button_new();
-            gtk_container_add (GTK_CONTAINER(buttons_player2[i][j]), event_box_2[i][j]);
-            gtk_widget_set_name(buttons_player1[i][j],col);
-            gtk_widget_set_name(buttons_player2[i][j],col);
-        }
-    }
-    //Set buttons sizes to 40x40
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            gtk_widget_set_size_request(GTK_WIDGET(buttons_player1[i][j]), 20, 20);
-            gtk_widget_set_size_request(GTK_WIDGET(buttons_player2[i][j]), 20, 20);
-        }
-    }
-    //color buttons to default (blue)
-    /*
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            gtk_widget_modify_bg (GTK_WIDGET(event_box_1[i][j]), GTK_STATE_PRELIGHT, &color_yellow);
-            gtk_widget_modify_bg (GTK_WIDGET(event_box_2[i][j]), GTK_STATE_PRELIGHT, &color_yellow);
-
-        }
-    }
-    */
-    //Disable player2 table on start (we dont need it until we place our ships)
-    /*
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            gtk_widget_set_sensitive (GTK_WIDGET(buttons_player2[i][j]), FALSE);
-        }
-    }
-    */
-    //Put fields (buttons) to players tables
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            gtk_table_attach_defaults (GTK_TABLE(table_player1), buttons_player1[i][j], i, i+1, j, j+1);
-            gtk_table_attach_defaults (GTK_TABLE(table_player2), buttons_player2[i][j], i, i+1, j, j+1); 
-        }
-    }
-
-    //Define right container
-    GtkWidget *container_right;
-    //Declare right container as vbox (all elements one under another)
-    container_right = gtk_vbox_new(FALSE, 1); 
-    //Set right container borders widh
-    gtk_container_set_border_width (GTK_CONTAINER(container_right), 10);
-    //Put right container to window
-    gtk_container_add(GTK_CONTAINER(container_main), container_right);
-
-    //Define frame
-    GtkWidget *frame_console; 
-    //Declare frame
-    frame_console = gtk_frame_new (NULL);
-    //Set frame label
-    gtk_frame_set_label( GTK_FRAME(frame_console), "  Console  " );
-    //Align the label at the right of the frame
-    gtk_frame_set_label_align( GTK_FRAME(frame_console), 0.1, 0.5);
-    /* Set the style of the frame */
-    gtk_frame_set_shadow_type( GTK_FRAME(frame_console), GTK_SHADOW_ETCHED_OUT);
-    //Put frames in tables containers (in reverse order, because we want player2 [opponent] table on top)
-    gtk_box_pack_start(GTK_BOX(container_right), frame_console, TRUE, TRUE, 1);
-
-    //Define console log
-    GtkWidget *console_log;
-    //Declare console log (as text_view)
-    console_log = gtk_text_view_new();
-    //Set console log non-editable
-    gtk_text_view_set_editable(GTK_TEXT_VIEW(console_log), FALSE);
-    
-
-    //Define scrolled window to contains console_log
-    GtkWidget* scrolled_window;
-    //Declare scrolled window
-    scrolled_window = gtk_scrolled_window_new(FALSE, NULL);
-    //Put console log to scrolled window
-    gtk_container_add(GTK_CONTAINER(scrolled_window), console_log);
-    //Put scrolled window in bottom container
-    gtk_container_add(GTK_CONTAINER(frame_console), scrolled_window);
-
-    //Connect buttons to actions
-    for(int i=0; i<10; i++){
-        for(int j=0; j<10; j++){
-            g_signal_connect(G_OBJECT(buttons_player1[i][j]), "clicked",  G_CALLBACK(button_player1_clicked), event_box_1[i][j]);
-            g_signal_connect(G_OBJECT(buttons_player2[i][j]), "clicked",  G_CALLBACK(button_player2_clicked), event_box_2[i][j]);
-        }
-    }
-
-    //Define bufer
-    GtkTextBuffer *bufor;
-    //Declare bufor
-    bufor = gtk_text_view_get_buffer(GTK_TEXT_VIEW(console_log));
-
-    //"Define" text tags
-    gtk_text_buffer_create_tag(bufor, "bold", "weight", PANGO_WEIGHT_BOLD, NULL);
-    gtk_text_buffer_create_tag(bufor, "italic", "style", PANGO_STYLE_ITALIC, NULL);
-    gtk_text_buffer_create_tag(bufor, "blue_font", "foreground", "blue", NULL);
-
-    //Define iter
-    GtkTextIter iter;
-
-    //Write start text in text view
-    gtk_text_buffer_get_iter_at_offset(bufor, &iter, 0);
-    gtk_text_buffer_insert_with_tags_by_name (bufor, &iter, "Welcome to game!\n", -1, "bold", NULL);
-    writeToTextView(bufor,"Choose placement for  your ships...\n(After every placement press 's')\nPlace ship size 5");
-
-    //Connect window with keyboard and textview
-    g_signal_connect(window, "key-release-event", G_CALLBACK(key_event), bufor);
-
-    //Show all widgets and window
-    gtk_widget_show_all(window);  
-
-    gtk_main ();  
-    return 0;  
-}  
